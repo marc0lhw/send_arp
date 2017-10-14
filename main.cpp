@@ -181,6 +181,8 @@ int main(int argc, char* argv[])
 	uint8_t BROADCAST_MAC[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	uint8_t BROADCAST_MAC2[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 	struct in_addr * my_ip, *sender_ip, *target_ip;
+	sender_ip = (struct in_addr *)calloc(1, sizeof(in_addr));
+	target_ip = (struct in_addr *)calloc(1, sizeof(in_addr));
 	struct arp_packet * packet;
 	packet = (struct arp_packet *)calloc(1, sizeof(arp_packet));
 	unsigned char *frame = (unsigned char *)calloc(1, sizeof(struct libnet_ethernet_hdr)+sizeof(struct libnet_arp_hdr)+ETHER_ADDR_LEN+sizeof(struct in_addr)+ETHER_ADDR_LEN+sizeof(struct in_addr));
@@ -271,6 +273,8 @@ int main(int argc, char* argv[])
 //              printf("%02x ", frame[i]);
 //	printf("\n");
 
+	free(sender_ip);
+	free(target_ip);
 	free(packet);
 	free(frame);
 	
